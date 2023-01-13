@@ -13,7 +13,7 @@
   A basic demonstration of the SQLite3 "OO#1" API.
 */
 const mydb =
-  "https://github.com/TomDeneire/InformationScience/blob/main/course/data/stcv.sqlite";
+  "test.sqlite";
 ("use strict");
 (function () {
   /**
