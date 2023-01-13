@@ -12,8 +12,7 @@
 
   A basic demonstration of the SQLite3 "OO#1" API.
 */
-const mydb =
-  "test.sqlite";
+const mydb = "test.sqlite";
 ("use strict");
 (function () {
   /**

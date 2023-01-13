@@ -16,28 +16,52 @@
   demo-worker1-promiser.js is much easier to use from client code, as it
   lacks the message-passing acrobatics demonstrated in this file.
 */
-'use strict';
-(function(){
+"use strict";
+(function () {
+  if (self.window !== self) {
+    /*worker thread*/ /*
+      If sqlite3.js is in a directory other than this script, in order
+      to get sqlite3.js to resolve sqlite3.wasm properly, we have to
+      explicitly tell it where sqlite3.js is being loaded from. We do
+      that by passing the `sqlite3.dir=theDirName` URL argument to
+      _this_ script. That URL argument will be seen by the JS/WASM
+      loader and it will adjust the sqlite3.wasm path accordingly. If
+      sqlite3.js/.wasm are in the same directory as this script then
+      that's not needed.
+
+      URL arguments passed as part of the filename via importScripts()
+      are simply lost, and such scripts see the self.location of
+      _this_ script.
+    */
+    var sqlite3 = "sqlite3.js";
+    const urlParams = new URL(self.location.href).searchParams;
+    if (urlParams.has("sqlite3.dir")) {
+      sqlite3 = urlParams.get("sqlite3.dir") + "/" + sqlite3;
+    }
+    importScripts(sqlite3);
+  }
   const T = self.SqliteTestUtil;
   const SW = new Worker("jswasm/sqlite3-worker1.js");
   const DbState = {
-    id: undefined
+    id: undefined,
   };
-  const eOutput = document.querySelector('#test-output');
+  const eOutput = document.querySelector("#test-output");
   const log = console.log.bind(console);
-  const logHtml = function(cssClass,...args){
+  const logHtml = function (cssClass, ...args) {
     log.apply(this, args);
-    const ln = document.createElement('div');
-    if(cssClass) ln.classList.add(cssClass);
-    ln.append(document.createTextNode(args.join(' ')));
+    const ln = document.createElement("div");
+    if (cssClass) ln.classList.add(cssClass);
+    ln.append(document.createTextNode(args.join(" ")));
     eOutput.append(ln);
   };
   const warn = console.warn.bind(console);
   const error = console.error.bind(console);
-  const toss = (...args)=>{throw new Error(args.join(' '))};
+  const toss = (...args) => {
+    throw new Error(args.join(" "));
+  };
 
-  SW.onerror = function(event){
-    error("onerror",event);
+  SW.onerror = function (event) {
+    error("onerror", event);
   };
 
   let startTime;
@@ -54,37 +78,48 @@
   const MsgHandlerQueue = {
     queue: [],
     id: 0,
-    push: function(type,callback){
+    push: function (type, callback) {
       this.queue.push(callback);
-      return type + '-' + (++this.id);
+      return type + "-" + ++this.id;
     },
-    shift: function(){
+    shift: function () {
       return this.queue.shift();
-    }
-  };
-  
-  const testCount = ()=>{
-    logHtml("","Total test count:",T.counter+". Total time =",(performance.now() - startTime),"ms");
+    },
   };
 
-  const logEventResult = function(ev){
+  const testCount = () => {
+    logHtml(
+      "",
+      "Total test count:",
+      T.counter + ". Total time =",
+      performance.now() - startTime,
+      "ms"
+    );
+  };
+
+  const logEventResult = function (ev) {
     const evd = ev.result;
-    logHtml(evd.errorClass ? 'error' : '',
-            "runOneTest",ev.messageId,"Worker time =",
-            (ev.workerRespondTime - ev.workerReceivedTime),"ms.",
-            "Round-trip event time =",
-            (performance.now() - ev.departureTime),"ms.",
-            (evd.errorClass ? ev.message : "")//, JSON.stringify(evd)
-           );
+    logHtml(
+      evd.errorClass ? "error" : "",
+      "runOneTest",
+      ev.messageId,
+      "Worker time =",
+      ev.workerRespondTime - ev.workerReceivedTime,
+      "ms.",
+      "Round-trip event time =",
+      performance.now() - ev.departureTime,
+      "ms.",
+      evd.errorClass ? ev.message : "" //, JSON.stringify(evd)
+    );
   };
 
-  const runOneTest = function(eventType, eventArgs, callback){
-    T.assert(eventArgs && 'object'===typeof eventArgs);
+  const runOneTest = function (eventType, eventArgs, callback) {
+    T.assert(eventArgs && "object" === typeof eventArgs);
     /* ^^^ that is for the testing and messageId-related code, not
        a hard requirement of all of the Worker-exposed APIs. */
-    const messageId = MsgHandlerQueue.push(eventType,function(ev){
+    const messageId = MsgHandlerQueue.push(eventType, function (ev) {
       logEventResult(ev);
-      if(callback instanceof Function){
+      if (callback instanceof Function) {
         callback(ev);
         testCount();
       }
@@ -94,43 +129,48 @@
       args: eventArgs,
       dbId: DbState.id,
       messageId: messageId,
-      departureTime: performance.now()
+      departureTime: performance.now(),
     };
-    log("Posting",eventType,"message to worker dbId="+(DbState.id||'default')+':',msg);
+    log(
+      "Posting",
+      eventType,
+      "message to worker dbId=" + (DbState.id || "default") + ":",
+      msg
+    );
     SW.postMessage(msg);
   };
 
   /** Methods which map directly to onmessage() event.type keys.
       They get passed the inbound event.data. */
   const dbMsgHandler = {
-    open: function(ev){
+    open: function (ev) {
       DbState.id = ev.dbId;
-      log("open result",ev);
+      log("open result", ev);
     },
-    exec: function(ev){
-      log("exec result",ev);
+    exec: function (ev) {
+      log("exec result", ev);
     },
-    export: function(ev){
-      log("export result",ev);
+    export: function (ev) {
+      log("export result", ev);
     },
-    error: function(ev){
-      error("ERROR from the worker:",ev);
+    error: function (ev) {
+      error("ERROR from the worker:", ev);
       logEventResult(ev);
     },
-    resultRowTest1: function f(ev){
-      if(undefined === f.counter) f.counter = 0;
-      if(null === ev.rowNumber){
+    resultRowTest1: function f(ev) {
+      if (undefined === f.counter) f.counter = 0;
+      if (null === ev.rowNumber) {
         /* End of result set. */
         T.assert(undefined === ev.row)
           .assert(Array.isArray(ev.columnNames))
           .assert(ev.columnNames.length);
-      }else{
+      } else {
         T.assert(ev.rowNumber > 0);
         ++f.counter;
       }
       //log("exec() result row:",ev);
-      T.assert(null === ev.rowNumber || 'number' === typeof ev.row.b);
-    }
+      T.assert(null === ev.rowNumber || "number" === typeof ev.row.b);
+    },
   };
 
   /**
@@ -148,109 +188,140 @@
      collect its db ID before continuing. If we don't wait, we may
      well fire off 10+ messages before the open actually responds.
   */
-  const runTests2 = function(){
-    const mustNotReach = ()=>{
+  const runTests2 = function () {
+    const mustNotReach = () => {
       throw new Error("This is not supposed to be reached.");
     };
-    runOneTest('exec',{
-      sql: ["create table t(a,b);",
-            "insert into t(a,b) values(1,2),(3,4),(5,6)"
-           ],
-      resultRows: [], columnNames: []
-    }, function(ev){
-      ev = ev.result;
-      T.assert(0===ev.resultRows.length)
-        .assert(0===ev.columnNames.length);
-    });
-    runOneTest('exec',{
-      sql: 'select a a, b b from t order by a',
-      resultRows: [], columnNames: [], saveSql:[]
-    }, function(ev){
-      ev = ev.result;
-      T.assert(3===ev.resultRows.length)
-        .assert(1===ev.resultRows[0][0])
-        .assert(6===ev.resultRows[2][1])
-        .assert(2===ev.columnNames.length)
-        .assert('b'===ev.columnNames[1]);
-    });
+    runOneTest(
+      "exec",
+      {
+        sql: [
+          "create table t(a,b);",
+          "insert into t(a,b) values(1,2),(3,4),(5,6)",
+        ],
+        resultRows: [],
+        columnNames: [],
+      },
+      function (ev) {
+        ev = ev.result;
+        T.assert(0 === ev.resultRows.length).assert(
+          0 === ev.columnNames.length
+        );
+      }
+    );
+    runOneTest(
+      "exec",
+      {
+        sql: "select a a, b b from t order by a",
+        resultRows: [],
+        columnNames: [],
+        saveSql: [],
+      },
+      function (ev) {
+        ev = ev.result;
+        T.assert(3 === ev.resultRows.length)
+          .assert(1 === ev.resultRows[0][0])
+          .assert(6 === ev.resultRows[2][1])
+          .assert(2 === ev.columnNames.length)
+          .assert("b" === ev.columnNames[1]);
+      }
+    );
     //if(1){ error("Returning prematurely for testing."); return; }
-    runOneTest('exec',{
-      sql: 'select a a, b b from t order by a',
-      resultRows: [], columnNames: [],
-      rowMode: 'object'
-    }, function(ev){
-      ev = ev.result;
-      T.assert(3===ev.resultRows.length)
-        .assert(1===ev.resultRows[0].a)
-        .assert(6===ev.resultRows[2].b)
-    });
-    runOneTest('exec',{sql:'intentional_error'}, mustNotReach);
+    runOneTest(
+      "exec",
+      {
+        sql: "select a a, b b from t order by a",
+        resultRows: [],
+        columnNames: [],
+        rowMode: "object",
+      },
+      function (ev) {
+        ev = ev.result;
+        T.assert(3 === ev.resultRows.length)
+          .assert(1 === ev.resultRows[0].a)
+          .assert(6 === ev.resultRows[2].b);
+      }
+    );
+    runOneTest("exec", { sql: "intentional_error" }, mustNotReach);
     // Ensure that the message-handler queue survives ^^^ that error...
-    runOneTest('exec',{
-      sql:'select 1',
-      resultRows: [],
-      //rowMode: 'array', // array is the default in the Worker interface
-    }, function(ev){
+    runOneTest(
+      "exec",
+      {
+        sql: "select 1",
+        resultRows: [],
+        //rowMode: 'array', // array is the default in the Worker interface
+      },
+      function (ev) {
+        ev = ev.result;
+        T.assert(1 === ev.resultRows.length).assert(1 === ev.resultRows[0][0]);
+      }
+    );
+    runOneTest(
+      "exec",
+      {
+        sql: "select a a, b b from t order by a",
+        callback: "resultRowTest1",
+        rowMode: "object",
+      },
+      function (ev) {
+        T.assert(3 === dbMsgHandler.resultRowTest1.counter);
+        dbMsgHandler.resultRowTest1.counter = 0;
+      }
+    );
+    runOneTest(
+      "exec",
+      {
+        sql: [
+          "pragma foreign_keys=0;",
+          // ^^^ arbitrary query with no result columns
+          "select a, b from t order by a desc;",
+          "select a from t;",
+          // multi-statement exec only honors results from the first
+          // statement with result columns (regardless of whether)
+          // it has any rows).
+        ],
+        rowMode: 1,
+        resultRows: [],
+      },
+      function (ev) {
+        const rows = ev.result.resultRows;
+        T.assert(3 === rows.length).assert(6 === rows[0]);
+      }
+    );
+    runOneTest("exec", { sql: "delete from t where a>3" });
+    runOneTest(
+      "exec",
+      {
+        sql: "select count(a) from t",
+        resultRows: [],
+      },
+      function (ev) {
+        ev = ev.result;
+        T.assert(1 === ev.resultRows.length).assert(2 === ev.resultRows[0][0]);
+      }
+    );
+    runOneTest("export", {}, function (ev) {
       ev = ev.result;
-      T.assert(1 === ev.resultRows.length)
-        .assert(1 === ev.resultRows[0][0]);
-    });
-    runOneTest('exec',{
-      sql: 'select a a, b b from t order by a',
-      callback: 'resultRowTest1',
-      rowMode: 'object'
-    }, function(ev){
-      T.assert(3===dbMsgHandler.resultRowTest1.counter);
-      dbMsgHandler.resultRowTest1.counter = 0;
-    });
-    runOneTest('exec',{
-      sql:[
-        "pragma foreign_keys=0;",
-        // ^^^ arbitrary query with no result columns
-        "select a, b from t order by a desc;",
-        "select a from t;"
-        // multi-statement exec only honors results from the first
-        // statement with result columns (regardless of whether)
-        // it has any rows).
-      ],
-      rowMode: 1,
-      resultRows: []
-    },function(ev){
-      const rows = ev.result.resultRows;
-      T.assert(3===rows.length).
-        assert(6===rows[0]);
-    });
-    runOneTest('exec',{sql: 'delete from t where a>3'});
-    runOneTest('exec',{
-      sql: 'select count(a) from t',
-      resultRows: []
-    },function(ev){
-      ev = ev.result;
-      T.assert(1===ev.resultRows.length)
-        .assert(2===ev.resultRows[0][0]);
-    });
-    runOneTest('export',{}, function(ev){
-      ev = ev.result;
-      log("export result:",ev);
-      T.assert('string' === typeof ev.filename)
+      log("export result:", ev);
+      T.assert("string" === typeof ev.filename)
         .assert(ev.byteArray instanceof Uint8Array)
         .assert(ev.byteArray.length > 1024)
-        .assert('application/x-sqlite3' === ev.mimetype);
+        .assert("application/x-sqlite3" === ev.mimetype);
     });
     /***** close() tests must come last. *****/
-    runOneTest('close',{unlink:true},function(ev){
+    runOneTest("close", { unlink: true }, function (ev) {
       ev = ev.result;
-      T.assert('string' === typeof ev.filename);
+      T.assert("string" === typeof ev.filename);
     });
-    runOneTest('close',{unlink:true},function(ev){
+    runOneTest("close", { unlink: true }, function (ev) {
       ev = ev.result;
       T.assert(undefined === ev.filename);
-      logHtml('warning',"This is the final test.");
+      logHtml("warning", "This is the final test.");
     });
-    logHtml('warning',"Finished posting tests. Waiting on async results.");
+    logHtml("warning", "Finished posting tests. Waiting on async results.");
   };
 
-  const runTests = function(){
+  const runTests = function () {
     /**
        Design decision time: all remaining tests depend on the 'open'
        command having succeeded. In order to support multiple DBs, the
@@ -275,39 +346,46 @@
        waitForOpen.
     */
     const waitForOpen = 1,
-          simulateOpenError = 0 /* if true, the remaining tests will
+      simulateOpenError = 0; /* if true, the remaining tests will
                                    all barf if waitForOpen is
-                                   false. */;
-    logHtml('',
-            "Sending 'open' message and",(waitForOpen ? "" : "NOT ")+
-            "waiting for its response before continuing.");
+                                   false. */
+    logHtml(
+      "",
+      "Sending 'open' message and",
+      (waitForOpen ? "" : "NOT ") +
+        "waiting for its response before continuing."
+    );
     startTime = performance.now();
-    runOneTest('open', {
-      filename:'testing2.sqlite3',
-      simulateError: simulateOpenError
-    }, function(ev){
-      log("open result",ev);
-      T.assert('testing2.sqlite3'===ev.result.filename)
-        .assert(ev.dbId)
-        .assert(ev.messageId)
-        .assert('string' === typeof ev.result.vfs);
-      DbState.id = ev.dbId;
-      if(waitForOpen) setTimeout(runTests2, 0);
-    });
-    if(!waitForOpen) runTests2();
+    runOneTest(
+      "open",
+      {
+        filename: "testing2.sqlite3",
+        simulateError: simulateOpenError,
+      },
+      function (ev) {
+        log("open result", ev);
+        T.assert("testing2.sqlite3" === ev.result.filename)
+          .assert(ev.dbId)
+          .assert(ev.messageId)
+          .assert("string" === typeof ev.result.vfs);
+        DbState.id = ev.dbId;
+        if (waitForOpen) setTimeout(runTests2, 0);
+      }
+    );
+    if (!waitForOpen) runTests2();
   };
 
-  SW.onmessage = function(ev){
-    if(!ev.data || 'object'!==typeof ev.data){
-      warn("Unknown sqlite3-worker message type:",ev);
+  SW.onmessage = function (ev) {
+    if (!ev.data || "object" !== typeof ev.data) {
+      warn("Unknown sqlite3-worker message type:", ev);
       return;
     }
-    ev = ev.data/*expecting a nested object*/;
+    ev = ev.data /*expecting a nested object*/;
     //log("main window onmessage:",ev);
-    if(ev.result && ev.messageId){
+    if (ev.result && ev.messageId) {
       /* We're expecting a queued-up callback handler. */
       const f = MsgHandlerQueue.shift();
-      if('error'===ev.type){
+      if ("error" === ev.type) {
         dbMsgHandler.error(ev);
         return;
       }
@@ -315,31 +393,34 @@
       f(ev);
       return;
     }
-    switch(ev.type){
-        case 'sqlite3-api':
-          switch(ev.result){
-              case 'worker1-ready':
-                log("Message:",ev);
-                self.sqlite3TestModule.setStatus(null);
-                runTests();
-                return;
-              default:
-                warn("Unknown sqlite3-api message type:",ev);
-                return;
-          }
-        default:
-          if(dbMsgHandler.hasOwnProperty(ev.type)){
-            try{dbMsgHandler[ev.type](ev);}
-            catch(err){
-              error("Exception while handling db result message",
-                    ev,":",err);
-            }
+    switch (ev.type) {
+      case "sqlite3-api":
+        switch (ev.result) {
+          case "worker1-ready":
+            log("Message:", ev);
+            self.sqlite3TestModule.setStatus(null);
+            runTests();
             return;
+          default:
+            warn("Unknown sqlite3-api message type:", ev);
+            return;
+        }
+      default:
+        if (dbMsgHandler.hasOwnProperty(ev.type)) {
+          try {
+            dbMsgHandler[ev.type](ev);
+          } catch (err) {
+            error("Exception while handling db result message", ev, ":", err);
           }
-          warn("Unknown sqlite3-api message type:",ev);
+          return;
+        }
+        warn("Unknown sqlite3-api message type:", ev);
     }
   };
   log("Init complete, but async init bits may still be running.");
   log("Installing Worker into global scope SW for dev purposes.");
   self.SW = SW;
+  if (sqlite3.capi.sqlite3_vfs_find("opfs")) {
+    console.log("opfs present");
+  }
 })();
